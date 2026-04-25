@@ -1,0 +1,500 @@
+// Prisma Schema - CRM Multicanal
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// SECURITY & USERS
+// ============================================
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  phone         String?
+  avatar        String?
+  isActive      Boolean   @default(true) @map("is_active")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  companyId     String    @map("company_id")
+  company       Company   @relation(fields: [companyId], references: [id])
+
+  userRoles     UserRole[]
+  teamUsers     TeamUser[]
+  refreshTokens RefreshToken[]
+  loginLogs     LoginLog[]
+  activityLogs  ActivityLog[]
+  contactNotes  ContactNote[]
+  conversationParticipants ConversationParticipant[]
+  messages      Message[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  name        String     @unique // ADMIN, SUPERVISOR, AGENT
+  description String?
+  permissions Json       @default("[]")
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  userRoles   UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model LoginLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  success   Boolean
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("login_logs")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  action     String
+  entity     String
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+// ============================================
+// ORGANIZATION
+// ============================================
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  timezone    String   @default("America/Bogota")
+  isActive    Boolean  @default(true) @map("is_active")
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users       User[]
+  teams       Team[]
+  channelAccounts ChannelAccount[]
+  contacts    Contact[]
+  tags        Tag[]
+  conversations Conversation[]
+
+  @@map("companies")
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  companyId   String   @map("company_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  teamUsers   TeamUser[]
+
+  @@map("teams")
+}
+
+model TeamUser {
+  id        String   @id @default(uuid())
+  teamId    String   @map("team_id")
+  userId    String   @map("user_id")
+  role      String   @default("member") // leader, member
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_users")
+}
+
+// ============================================
+// CHANNELS
+// ============================================
+
+enum ChannelType {
+  WHATSAPP
+  FACEBOOK
+  INSTAGRAM
+  WEBCHAT
+}
+
+model Channel {
+  id          String      @id @default(uuid())
+  type        ChannelType @unique
+  name        String
+  icon        String?
+  isEnabled   Boolean     @default(true) @map("is_enabled")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  channelAccounts ChannelAccount[]
+
+  @@map("channels")
+}
+
+model ChannelAccount {
+  id            String      @id @default(uuid())
+  channelId     String      @map("channel_id")
+  companyId     String      @map("company_id")
+  name          String
+  identifier    String      // Phone number, page ID, etc.
+  accessToken   String?     @map("access_token")
+  refreshToken  String?     @map("refresh_token")
+  tokenExpiresAt DateTime?  @map("token_expires_at")
+  status        String      @default("active") // active, inactive, error
+  settings      Json        @default("{}")
+  lastSyncAt    DateTime?   @map("last_sync_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  channel       Channel     @relation(fields: [channelId], references: [id])
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  whatsappNumber WhatsappNumber?
+  webhooks      ChannelWebhook[]
+  conversations Conversation[]
+
+  @@unique([channelId, companyId, identifier])
+  @@map("channel_accounts")
+}
+
+model ChannelWebhook {
+  id              String   @id @default(uuid())
+  channelAccountId String  @map("channel_account_id")
+  webhookUrl      String   @map("webhook_url")
+  verifyToken     String   @map("verify_token")
+  isActive        Boolean  @default(true) @map("is_active")
+  lastEventAt     DateTime? @map("last_event_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  channelAccount  ChannelAccount @relation(fields: [channelAccountId], references: [id], onDelete: Cascade)
+
+  @@map("channel_webhooks")
+}
+
+// ============================================
+// WHATSAPP
+// ============================================
+
+model WhatsappNumber {
+  id                String   @id @default(uuid())
+  channelAccountId  String   @unique @map("channel_account_id")
+  phoneNumber       String   @map("phone_number")
+  phoneNumberId     String   @map("phone_number_id") // Meta Phone Number ID
+  wabaId            String   @map("waba_id") // WhatsApp Business Account ID
+  displayName       String   @map("display_name")
+  qualityRating     String?  @map("quality_rating")
+  messagingLimit    String?  @map("messaging_limit")
+  status            String   @default("connected")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  channelAccount    ChannelAccount @relation(fields: [channelAccountId], references: [id], onDelete: Cascade)
+  templates         WhatsappTemplate[]
+  messageLogs       WhatsappMessageLog[]
+
+  @@map("whatsapp_numbers")
+}
+
+model WhatsappTemplate {
+  id                String   @id @default(uuid())
+  whatsappNumberId  String   @map("whatsapp_number_id")
+  templateId        String   @map("template_id") // Meta Template ID
+  name              String
+  language          String
+  category          String   // MARKETING, UTILITY, AUTHENTICATION
+  status            String   // APPROVED, PENDING, REJECTED
+  components        Json     @default("[]")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  whatsappNumber    WhatsappNumber @relation(fields: [whatsappNumberId], references: [id], onDelete: Cascade)
+
+  @@unique([whatsappNumberId, templateId])
+  @@map("whatsapp_templates")
+}
+
+model WhatsappMessageLog {
+  id                String   @id @default(uuid())
+  whatsappNumberId  String   @map("whatsapp_number_id")
+  messageId         String?  @map("message_id") // FK to messages table
+  waMessageId       String   @map("wa_message_id") // Meta Message ID
+  direction         String   // inbound, outbound
+  status            String   // sent, delivered, read, failed
+  errorCode         String?  @map("error_code")
+  errorMessage      String?  @map("error_message")
+  metadata          Json?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  whatsappNumber    WhatsappNumber @relation(fields: [whatsappNumberId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_message_logs")
+}
+
+// ============================================
+// CONTACTS (CORE)
+// ============================================
+
+model Contact {
+  id              String   @id @default(uuid())
+  companyId       String   @map("company_id")
+  firstName       String?  @map("first_name")
+  lastName        String?  @map("last_name")
+  email           String?
+  phone           String?
+  whatsappId      String?  @map("whatsapp_id") // WhatsApp user ID
+  facebookId      String?  @map("facebook_id")
+  instagramId     String?  @map("instagram_id")
+  avatar          String?
+  source          String?  // whatsapp, facebook, instagram, manual
+  customFields    Json     @default("{}") @map("custom_fields")
+  lastContactAt   DateTime? @map("last_contact_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactTags     ContactTag[]
+  notes           ContactNote[]
+  conversations   Conversation[]
+
+  @@index([companyId, phone])
+  @@index([companyId, whatsappId])
+  @@map("contacts")
+}
+
+model Tag {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  name        String
+  color       String   @default("#6366f1")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactTags ContactTag[]
+
+  @@unique([companyId, name])
+  @@map("tags")
+}
+
+model ContactTag {
+  id        String   @id @default(uuid())
+  contactId String   @map("contact_id")
+  tagId     String   @map("tag_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, tagId])
+  @@map("contact_tags")
+}
+
+model ContactNote {
+  id        String   @id @default(uuid())
+  contactId String   @map("contact_id")
+  userId    String   @map("user_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("contact_notes")
+}
+
+// ============================================
+// CONVERSATIONS
+// ============================================
+
+enum ConversationStatus {
+  OPEN
+  FOLLOW_UP
+  CLOSED
+}
+
+model Conversation {
+  id                String             @id @default(uuid())
+  companyId         String             @map("company_id")
+  contactId         String             @map("contact_id")
+  channelAccountId  String             @map("channel_account_id")
+  status            ConversationStatus @default(OPEN)
+  subject           String?
+  lastMessageAt     DateTime?          @map("last_message_at")
+  windowExpiresAt   DateTime?          @map("window_expires_at") // 24h window for WhatsApp
+  unreadCount       Int                @default(0) @map("unread_count")
+  metadata          Json               @default("{}")
+  closedAt          DateTime?          @map("closed_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact           Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channelAccount    ChannelAccount     @relation(fields: [channelAccountId], references: [id])
+  participants      ConversationParticipant[]
+  messages          Message[]
+
+  @@index([companyId, status])
+  @@index([contactId])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id              String   @id @default(uuid())
+  conversationId  String   @map("conversation_id")
+  userId          String   @map("user_id")
+  role            String   @default("agent") // agent, supervisor
+  assignedAt      DateTime @default(now()) @map("assigned_at")
+  unassignedAt    DateTime? @map("unassigned_at")
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@map("conversation_participants")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  CONTACT
+  STICKER
+  TEMPLATE
+  INTERACTIVE
+  SYSTEM
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model Message {
+  id              String           @id @default(uuid())
+  conversationId  String           @map("conversation_id")
+  senderId        String?          @map("sender_id") // User ID if outbound
+  type            MessageType      @default(TEXT)
+  direction       MessageDirection
+  content         String
+  mediaUrl        String?          @map("media_url")
+  mediaType       String?          @map("media_type")
+  externalId      String?          @map("external_id") // Meta message ID
+  status          String           @default("sent") // sent, delivered, read, failed
+  metadata        Json             @default("{}")
+  isRead          Boolean          @default(false) @map("is_read")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  conversation    Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User?            @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+// ============================================
+// AUTOMATION & AI PREPARATION (PHASE 2)
+// ============================================
+
+model SystemEvent {
+  id          String   @id @default(uuid())
+  type        String   // message.received, conversation.created, etc.
+  payload     Json
+  status      String   @default("pending") // pending, processed, failed
+  processedAt DateTime? @map("processed_at")
+  error       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([type, status])
+  @@map("system_events")
+}
+
+model AutomationRule {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  name        String
+  description String?
+  trigger     String   // message.received, conversation.created
+  conditions  Json     @default("[]")
+  actions     Json     @default("[]")
+  isActive    Boolean  @default(false) @map("is_active")
+  priority    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("automation_rules")
+}
+
+model AiEvent {
+  id            String   @id @default(uuid())
+  conversationId String? @map("conversation_id")
+  messageId     String?  @map("message_id")
+  type          String   // intent_detection, response_generation
+  input         Json
+  output        Json?
+  model         String?
+  tokensUsed    Int?     @map("tokens_used")
+  latencyMs     Int?     @map("latency_ms")
+  status        String   @default("pending") // pending, completed, failed
+  error         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([type, status])
+  @@map("ai_events")
+}
